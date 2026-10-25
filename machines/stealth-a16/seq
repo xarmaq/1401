@@ -1,0 +1,22 @@
+#!/bin/bash
+# Erases the macOS APFS partition and installs macOS 15 Sequoia on it from MACINSTALL, with no network.
+# In macOS Recovery (the stick's "1401" entry), Utilities > Terminal:
+#     bash /V*/14*/seq
+LOG=/Volumes/1401/seq-install.log
+exec > >(tee "$LOG") 2>&1
+die() { echo "STOP: $*"; exit 1; }
+pmset -a sleep 0 displaysleep 0 disksleep 0 >/dev/null 2>&1
+[ -f /Volumes/MACINSTALL/InstallAssistant.pkg ] || die "no installer on MACINSTALL (diskutil mount MACINSTALL)"
+
+if [ -d /Volumes/macOS ]; then
+    STORE=$(diskutil info /Volumes/macOS | awk -F': *' '/APFS Physical Store/{print $2}' | tr -d ' ')
+    [ -n "$STORE" ] || die "cannot find the partition under /Volumes/macOS"
+    case "$STORE" in disk0s*) ;; *) die "macOS is on $STORE, not on the internal disk0; not erasing";; esac
+    diskutil info "$STORE" | grep -q "Apple_APFS" || die "$STORE is not an APFS partition; not erasing"
+    echo "== erasing the old macOS ($STORE) as a fresh APFS volume 'macOS'"
+    diskutil eraseVolume APFS macOS "$STORE" || die "erase failed"
+else
+    echo "== no /Volumes/macOS: using it as it is"; diskutil list internal
+fi
+[ -d /Volumes/macOS ] || die "no /Volumes/macOS after erase"
+exec bash /Volumes/1401/StealthA16/offline-install.sh macOS

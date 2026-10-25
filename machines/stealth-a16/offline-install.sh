@@ -1,5 +1,5 @@
 #!/bin/bash
-# Installs macOS 26.7.1 (25G241) from the full installer on the MACINSTALL partition, with no network.
+# Installs macOS from the full installer (InstallAssistant.pkg) on the MACINSTALL partition, with no network.
 # In macOS Recovery: Utilities > Terminal, then
 #     bash /V*/14*/go                                             (the short form: /Volumes/1401/go runs this)
 #     bash /Volumes/1401/StealthA16/offline-install.sh "Other"    (another target volume name)
@@ -7,21 +7,22 @@ set -uo pipefail
 
 PKG=/Volumes/MACINSTALL/InstallAssistant.pkg
 TARGET=/Volumes/${1:-macOS}
-APP="$TARGET/Applications/Install macOS Tahoe.app"
-SS="$APP/Contents/SharedSupport/SharedSupport.dmg"
 
 pmset -a sleep 0 displaysleep 0 disksleep 0 >/dev/null 2>&1 || true
 
 [ -f "$PKG" ] || { echo "No $PKG: is the MACINSTALL partition mounted? (diskutil mount MACINSTALL)"; exit 1; }
 [ -d "$TARGET" ] || { echo "No volume $TARGET: create the APFS volume in Disk Utility first, or pass its name."; exit 1; }
 
-if [ ! -x "$APP/Contents/Resources/startosinstall" ]; then
+app() { ls -d "$TARGET"/Applications/Install\ macOS*.app 2>/dev/null | head -1; }
+APP=$(app)
+if [ -z "$APP" ] || [ ! -x "$APP/Contents/Resources/startosinstall" ]; then
     echo "== Unpacking the installer app onto $TARGET"
     # The package's postinstall (link_shared_support.bash) fails in Recovery; the app itself is laid down before it
     # runs, and its only job, putting SharedSupport.dmg in place, is done below.
     installer -pkg "$PKG" -target "$TARGET" || echo "   (the package's own postinstall failed, as expected in Recovery)"
 fi
-[ -x "$APP/Contents/Resources/startosinstall" ] || { echo "The installer app is not in $TARGET/Applications"; exit 1; }
+APP=$(app); SS="$APP/Contents/SharedSupport/SharedSupport.dmg"
+[ -n "$APP" ] && [ -x "$APP/Contents/Resources/startosinstall" ] || { echo "The installer app is not in $TARGET/Applications"; exit 1; }
 
 # InstallAssistant.pkg is also the SharedSupport disk image (it ends in a DMG trailer); Apple's script copies it as-is
 want=$(stat -f %z "$PKG")
