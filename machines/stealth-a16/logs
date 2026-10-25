@@ -1,0 +1,21 @@
+#!/bin/bash
+# Copies the installed macOS's logs onto the stick, for reading from Windows. In Recovery's Terminal:
+#     bash /V*/14*/logs
+OUT=/Volumes/1401/maclogs
+rm -rf "$OUT"; mkdir -p "$OUT"
+diskutil mount "macOS - Data" >/dev/null 2>&1
+D=$(ls -d "/Volumes/macOS - Data" /Volumes/Data 2>/dev/null | head -1)
+if [ -z "$D" ]; then
+    echo "The macOS Data volume is not mounted"; diskutil list > "$OUT/disks.txt"; diskutil apfs list >> "$OUT/disks.txt"; exit 1
+fi
+echo "== copying logs from $D (a few minutes)"
+cp -R "$D/Library/Logs/DiagnosticReports" "$OUT/" 2>/dev/null
+cp "$D/private/var/log/install.log" "$D/private/var/log/system.log" "$OUT/" 2>/dev/null
+# diagnostics + uuidtext side by side is the .logarchive layout
+A="$OUT/boot.logarchive"; mkdir -p "$A"
+cp -R "$D/private/var/db/diagnostics/." "$A/" 2>/dev/null
+cp -R "$D/private/var/db/uuidtext/." "$A/" 2>/dev/null
+log show "$A" --last 3h --style compact --predicate 'process == "WindowServer" OR process == "kernel" OR process == "loginwindow" OR messageType == fault' > "$OUT/log.txt" 2>&1
+ls -la "$OUT" "$OUT/DiagnosticReports" > "$OUT/listing.txt" 2>&1
+du -sh "$OUT"
+echo "== done. Restart into Windows (Apple menu > Restart)."
