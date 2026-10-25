@@ -18,7 +18,7 @@ diskutil mount "${1:-macOS} - Data" >/dev/null 2>&1
 D=$(ls -d "/Volumes/${1:-macOS} - Data" /Volumes/Data 2>/dev/null | head -1)
 [ -n "$D" ] && [ -d "$D/Library" ] || die "the Data volume of $SYS is not mounted"
 echo "system $SYS, data $D, package $PKG"
-sw=$(/usr/libexec/PlistBuddy -c "Print :ProductVersion" "$SYS/System/Library/CoreServices/SystemVersion.plist" 2>/dev/null)
+sw=$(grep -A1 "<key>ProductVersion</key>" "$SYS/System/Library/CoreServices/SystemVersion.plist" | grep "<string>" | sed -e "s/.*<string>//" -e "s/<.*//" | head -1)
 echo "installed macOS $sw"
 case "$sw" in 26.*) ;; *) die "this script installs the macOS 26 accelerator; installed is $sw";; esac
 
@@ -27,7 +27,8 @@ W="$D/private/var/tmp/nullmoth-recovery"
 rm -rf "$W" && mkdir -p "$W" || die "work folder"
 tar -xzf "$PKG" -C "$W" || die "unpack"
 P="$W/pkgroot"
-(cd "$P" && shasum -a 256 -c SHA256SUMS --quiet) || die "SHA256SUMS mismatch"
+# Recovery has no shasum; the tar.gz itself was checked against its pinned SHA-256 when the stick was written
+[ -f "$P/Library/Extensions/NVRM.kext/Contents/MacOS/NVRM" ] && [ -d "$P/Library/NullMoth/kexts/26/NVAccel.kext" ] || die "package incomplete"
 echo "   ok"
 
 step "2. copy the driver"
@@ -36,7 +37,6 @@ mkdir -p "$EXT" "$GB" "$NM" "$L/KernelCollections" || die "folders"
 for k in NVRM NVRMFB NVRMAGDC; do rm -rf "$EXT/$k.kext" && ditto "$P/Library/Extensions/$k.kext" "$EXT/$k.kext" || die "copy $k"; done
 rm -rf "$EXT/NVAccel.kext" && ditto "$P/Library/NullMoth/kexts/26/NVAccel.kext" "$EXT/NVAccel.kext" || die "copy NVAccel"
 rm -rf "$NM/kexts" && ditto "$P/Library/NullMoth/kexts" "$NM/kexts" || die "copy cached accelerators"
-for t in 15 26; do (cd "$NM/kexts/$t" && find NVAccel.kext -type f -exec shasum -a 256 '{}' \;) > "$NM/kexts/$t/SHA256SUMS"; done
 echo 26 > "$NM/os-major"
 for b in NVMTLDriver.bundle NVIDIAShared.bundle nvmtl; do rm -rf "$GB/$b" && ditto "$P/Library/GPUBundles/$b" "$GB/$b" || die "copy $b"; done
 cp "$P/Library/GPUBundles/nvmtl-allow.txt" "$GB/" || die "copy allow list"
