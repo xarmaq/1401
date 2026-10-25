@@ -46,6 +46,51 @@ DRIVERS = [
         },
         "what": "MediaTek Wi-Fi (AirportMtkWlan 1.5.0, native Wi-Fi menu)",
     },
+    {   # MediaTek MT7925 / AMD RZ717 Wi-Fi core (firmware, DMA, WPA2, data path; Ethernet front end on its own).
+        # The xarmaq fork adds sleep/wake (boot-arg -mtknosleep turns it off) and joins no open network by default
+        "name": "MtkWlan", "repo": "xarmaq/mt7925-hackintosh-wifi", "section": "Network", "experimental": True,
+        "ids": ["14C3-7925", "14C3-0717"],
+        "builds": {
+            v: ("https://github.com/xarmaq/mt7925-hackintosh-wifi/releases/download/v0.12.1-stealth.2/MtkWlan-0.12.1-stealth.2-RELEASE.zip",
+                1486202, "f42d81e3e982ded990ceb8fe95a7927b51155acd2b1b3fe801888bf9e2aa05af") for v in (SEQUOIA, TAHOE)
+        },
+        "what": "MediaTek MT7925 Wi-Fi (MtkWlan 0.12.1-stealth.2, sleep/wake)",
+    },
+    {   # the native Wi-Fi menu on top of MtkWlan. Built against 25G241's class layouts: on any other build it declines
+        # and MtkWlan keeps its Ethernet front end. Idle without the two boot-args
+        "name": "MtkWlanNative", "repo": "xarmaq/mt7925-hackintosh-wifi-native", "section": "Network",
+        "experimental": True, "ids": ["14C3-7925", "14C3-0717"], "requires": ["MtkWlan"],
+        "boot_args": ["mtkfe=native", "mtknativeif=1"],
+        "builds": {
+            TAHOE: ("https://github.com/xarmaq/mt7925-hackintosh-wifi-native/releases/download/v0.4.13-stealth.1/MtkWlanNative-0.4.13-stealth.1-RELEASE.zip",
+                    46081, "a7243d37fd9723f9e8868febe42cce311acbd61667fc9acdf63b9712a4c80400"),
+        },
+        "what": "MediaTek MT7925 native Wi-Fi menu (MtkWlanNative 0.4.13-stealth.1, macOS 26.7.1 25G241)",
+    },
+    {   # MT7925 Bluetooth firmware loader (USB half of the card); bluetoothd drives it afterwards through BlueToolFixup
+        "name": "MtkBt", "repo": "xarmaq/mt7925-hackintosh-bluetooth", "section": "Bluetooth", "experimental": False,
+        "ids": ["0489-E111", "0489-E113", "0489-E118", "0489-E11E", "0489-E124", "0489-E139", "0489-E13A", "0489-E0FA",
+                "0489-E10F", "0489-E110", "0489-E116", "0489-E14E", "0489-E14F", "0489-E150", "0489-E151", "13D3-3588",
+                "13D3-3602", "13D3-3603", "13D3-3604", "0E8D-8C38", "0E8D-0717"],
+        "requires": ["BlueToolFixup"],
+        "builds": {
+            v: ("https://github.com/xarmaq/mt7925-hackintosh-bluetooth/releases/download/v0.2.4-stealth.1/MtkBt-0.2.4-stealth.1-RELEASE.zip",
+                469709, "7b19cd4e48f51f5889f7e0f5a618b337d70e5ed7485df441306b1cecca560bc9") for v in (SEQUOIA, TAHOE)
+        },
+        "what": "MediaTek MT7925 Bluetooth (MtkBt 0.2.4-stealth.1, sleep/wake)",
+    },
+    {   # two bluetoothd patches the MT7925 needs on 25G241 (LE connect crash loop, silent AirPods); inert on other builds
+        "name": "LegionBtFix", "repo": "watchthelight-labs/LegionBtFix", "section": "Bluetooth", "experimental": True,
+        "ids": ["0489-E111", "0489-E113", "0489-E118", "0489-E11E", "0489-E124", "0489-E139", "0489-E13A", "0489-E0FA",
+                "0489-E10F", "0489-E110", "0489-E116", "0489-E14E", "0489-E14F", "0489-E150", "0489-E151", "13D3-3588",
+                "13D3-3602", "13D3-3603", "13D3-3604", "0E8D-8C38", "0E8D-0717"],
+        "requires": ["Lilu", "BlueToolFixup"],
+        "builds": {
+            TAHOE: ("https://github.com/watchthelight-labs/LegionBtFix/releases/download/0.2.0/LegionBtFix-0.2.0-RELEASE.zip",
+                    16599, "0d98738e9dcd2c1c0dbd5602c9cb0dd55e2a64a697cc1c596a0969d4c867cf54"),
+        },
+        "what": "MT7925 bluetoothd fixes (LegionBtFix 0.2.0, macOS 26.7.1 25G241)",
+    },
     {   # Qualcomm WCN7850 / FastConnect 7800 (NCM865) Wi-Fi; built for Tahoe (MinKernel 25)
         "name": "AirportWCN7850", "repo": "razvanccr/AirportWCN7850", "section": "Network", "experimental": True,
         "ids": ["17CB-1107"],
@@ -254,13 +299,34 @@ def _efi_from_zip(body, name):
         return z.read(hits[0])
 
 
+def _add_boot_args(config_path, args, notices):
+    """Append the boot-args a chosen kext needs (a front end that stays idle without them). An argument whose name is
+    already in boot-args keeps the config's value."""
+    with open(config_path, "rb") as fh:
+        cfg = plistlib.load(fh)
+    nv = cfg["NVRAM"]["Add"].setdefault("7C436110-AB2A-4BBB-A880-FE41995C9F82", {})
+    have = (nv.get("boot-args") or "").split()
+    names = {a.split("=", 1)[0] for a in have}
+    new = [a for a in args if a.split("=", 1)[0] not in names]
+    if not new:
+        return
+    nv["boot-args"] = " ".join(have + new)
+    with open(config_path + ".tmp", "wb") as fh:
+        plistlib.dump(cfg, fh)
+    os.replace(config_path + ".tmp", config_path)
+    notices.append("boot-args for community drivers: " + " ".join(new))
+
+
 def apply_efi_drivers(config_path, customization, macos_version, notices, fetch, experimental=False):
     """Write the matching community UEFI drivers into EFI/OC/Drivers and enable them in config.plist.
     fetch(url) -> bytes (the engine's downloader, with the mirror behind it); the archive must have the pinned size
     and SHA-256 or nothing is written."""
     try:
         add, _ = chosen(customization, macos_version, experimental)
+        args = [a for d in add if not d.get("efi") for a in d.get("boot_args", ())]
         add = [d for d in add if d.get("efi")]
+        if args:
+            _add_boot_args(config_path, args, notices)
         if not add:
             return []
         with open(config_path, "rb") as fh:

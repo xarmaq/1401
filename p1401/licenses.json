@@ -335,6 +335,10 @@
    "license": "GPL-2.0",
    "class": "copyleft"
   },
+  "watchthelight-labs/LegionBtFix": {
+   "license": "GPL-2.0",
+   "class": "copyleft"
+  },
   "watchthelight-labs/LegionCbmrFix": {
    "license": "BSD-3-Clause",
    "class": "permissive"
@@ -350,6 +354,21 @@
   "watchthelight-labs/LegionITEKbdFix": {
    "license": "ISC",
    "class": "permissive"
+  },
+  "xarmaq/mt7925-hackintosh-bluetooth": {
+   "license": "ISC",
+   "class": "permissive",
+   "evidence": "ISC, Clear BSD parts (MtkBtFw), MediaTek firmware licence"
+  },
+  "xarmaq/mt7925-hackintosh-wifi": {
+   "license": "ISC",
+   "class": "permissive",
+   "evidence": "ISC, Clear BSD parts (itlmt7925), MediaTek firmware licence; LICENSE + NOTICE.md in the release zip"
+  },
+  "xarmaq/mt7925-hackintosh-wifi-native": {
+   "license": "ISC",
+   "class": "permissive",
+   "evidence": "ISC, Clear BSD parts (itlmt7925)"
   },
   "Xiashangning/BigSurface": {
    "license": "GPL-3.0",

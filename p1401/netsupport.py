@@ -162,6 +162,17 @@ def register():
     for i in MEDIATEK_BT_IDS:
         if i not in pci_data.BluetoothIDs:
             pci_data.BluetoothIDs.append(i)
+    # Radios a community driver drives (community.py, e.g. MtkBt for the MT7925): listed as supported so the engine
+    # keeps the device in the build instead of disabling it, without turning SimpleMtkBtFw on for them.
+    try:
+        from . import community  # noqa: PLC0415
+        for d in community.DRIVERS:
+            if d.get("section") == "Bluetooth":
+                for i in d.get("ids", []):
+                    if i not in pci_data.BluetoothIDs:
+                        pci_data.BluetoothIDs.append(i)
+    except ImportError:
+        pass
 
     KextInfo = kext_data.KextInfo
     # Each kext is pinned to an exact file and SHA-256, so the build fetches a known binary (never "latest"):
@@ -198,8 +209,12 @@ def apply_kexts(ocpe, customization, macos_version, notices, experimental=False)
             from . import community  # noqa: PLC0415
             tahoe_native = next(d for d in community.DRIVERS if d["name"] == "AirportMtkWlan")
             deferred = bool(community.build_for(tahoe_native, macos_version)) and any(d in tahoe_native["ids"] for d in net)
+            community_wifi = any(c.get("section") == "Network" and community.build_for(c, macos_version)
+                                 and set(c.get("ids", [])) & set(net) for c in community.DRIVERS)
+            community_bt = any(c.get("section") == "Bluetooth" and community.build_for(c, macos_version)
+                               and set(c.get("ids", [])) & set(bt) for c in community.DRIVERS)
         except ImportError:     # loaded on its own (the opt-in test's copies): no community table to defer to
-            deferred = False
+            deferred = community_wifi = community_bt = False
         if deferred:
             pass    # macOS 26: community.py adds AirportMtkWlan (native Wi-Fi menu) for these cards and says so
         elif any(d in MEDIATEK_WIFI_KEXT_IDS for d in net):
@@ -216,11 +231,11 @@ def apply_kexts(ocpe, customization, macos_version, notices, experimental=False)
                 notices.append("MediaTek Wi-Fi: added the experimental SimpleMtkWlan driver (MT7921/MT7922) because "
                                "experimental drivers are turned on. It may be unstable and may not work inside the "
                                "macOS installer - have Ethernet ready for the install.")
-        elif any(d in MEDIATEK_WIFI_IDS for d in net):
+        elif any(d in MEDIATEK_WIFI_IDS for d in net) and not community_wifi:
             # A MediaTek Wi-Fi card SimpleMtkWlan does not match (RZ616 0616, MT7925 0717/7925): no driver to install.
             notices.append("MediaTek Wi-Fi: this card (RZ616 / MT7925 class) has no macOS driver. Use Ethernet or a "
                            "USB Wi-Fi adapter, or write a full offline installer.")
-        if any(d in MEDIATEK_BT_IDS for d in bt):
+        if any(d in MEDIATEK_BT_IDS for d in bt) and not community_bt:
             idx = kext_data.kext_index_by_name.get(MTK_BT_KEXT)
             if idx is not None:
                 km.check_kext(idx, macos_version)
