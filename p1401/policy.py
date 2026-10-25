@@ -443,6 +443,17 @@ def apply(config_path, result, policy):
         quirks["DisableVariableWrite"] = True
         change("amd-zen4-variable-write", before, "DisableVariableWrite=True",
                f"{cpu.get('Processor Name') or 'Zen 4/5 Ryzen'}: the installer froze about 19 minutes in while writing NVRAM")
+    # The engine enables CaseySJ's IOPCIIsHotplugPort patch for AM5 chipsets and Raphael, Storm Peak, Phoenix and Granite
+    # Ridge, but not for the later laptop APUs. Their USB4 routers bring the same hotplug PCIe bridges, and the installer
+    # stopped at "[IOPCIConfigurator::configure()] PCI configuration PCI0" on a Ryzen AI 9 HX 370 (MSI Stealth A16 AI+,
+    # 10-25) with the patch present but off.
+    if cpu.get("Manufacturer") == "AMD" and any(c in str(cpu.get("Codename") or "").lower()
+                                                for c in ("hawk point", "strix", "krackan", "fire range")):
+        for pt in cfg.get("Kernel", {}).get("Patch", []):
+            if "IOPCIIsHotplugPort" in str(pt.get("Comment", "")) and not pt.get("Enabled"):
+                pt["Enabled"] = True
+                change("amd-apu-hotplug-port", "IOPCIIsHotplugPort off", "IOPCIIsHotplugPort on",
+                       f"{cpu.get('Codename')}: USB4 hotplug bridges stop PCI configuration without it")
     # Whitelist entries are inert whenever DevirtualiseMmio is off. This includes configurations whose quirk was
     # already off before the policy pass; ocvalidate rejects enabled entries in either case.
     if quirks.get("DevirtualiseMmio") is False:
