@@ -1,0 +1,71 @@
+#!/bin/bash
+# Installs the NullMoth NVIDIA driver into the installed macOS from Recovery, before its first desktop. macOS 26's
+# Setup Assistant draws nothing without a Metal GPU ("presents 0 windows" on the firmware framebuffer), so the driver
+# has to be there before the first start. Does what pkgroot/install.sh does, with every path on the installed system's
+# volumes instead of /. In Recovery's Terminal:
+#     bash /V*/14*/nv
+set -u
+LOG=/Volumes/1401/nv-install.log
+exec > >(tee "$LOG") 2>&1
+die() { echo "STOP: $*"; exit 1; }
+step() { echo; echo "== $*"; }
+
+PKG=$(ls /Volumes/1401/NullMoth/nullmoth-nvidia-*.tar.gz 2>/dev/null | head -1)
+SYS=/Volumes/${1:-macOS}
+[ -n "$PKG" ] || die "no NullMoth package on the stick"
+[ -d "$SYS/System/Library/KernelCollections" ] || die "no installed macOS at $SYS"
+diskutil mount "${1:-macOS} - Data" >/dev/null 2>&1
+D=$(ls -d "/Volumes/${1:-macOS} - Data" /Volumes/Data 2>/dev/null | head -1)
+[ -n "$D" ] && [ -d "$D/Library" ] || die "the Data volume of $SYS is not mounted"
+echo "system $SYS, data $D, package $PKG"
+sw=$(/usr/libexec/PlistBuddy -c "Print :ProductVersion" "$SYS/System/Library/CoreServices/SystemVersion.plist" 2>/dev/null)
+echo "installed macOS $sw"
+case "$sw" in 26.*) ;; *) die "this script installs the macOS 26 accelerator; installed is $sw";; esac
+
+step "1. unpack and check the package"
+W="$D/private/var/tmp/nullmoth-recovery"
+rm -rf "$W" && mkdir -p "$W" || die "work folder"
+tar -xzf "$PKG" -C "$W" || die "unpack"
+P="$W/pkgroot"
+(cd "$P" && shasum -a 256 -c SHA256SUMS --quiet) || die "SHA256SUMS mismatch"
+echo "   ok"
+
+step "2. copy the driver"
+L="$D/Library"; EXT="$L/Extensions"; GB="$L/GPUBundles"; NM="$L/NullMoth"; FW="$NM/nvfw"
+mkdir -p "$EXT" "$GB" "$NM" "$L/KernelCollections" || die "folders"
+for k in NVRM NVRMFB NVRMAGDC; do rm -rf "$EXT/$k.kext" && ditto "$P/Library/Extensions/$k.kext" "$EXT/$k.kext" || die "copy $k"; done
+rm -rf "$EXT/NVAccel.kext" && ditto "$P/Library/NullMoth/kexts/26/NVAccel.kext" "$EXT/NVAccel.kext" || die "copy NVAccel"
+rm -rf "$NM/kexts" && ditto "$P/Library/NullMoth/kexts" "$NM/kexts" || die "copy cached accelerators"
+for t in 15 26; do (cd "$NM/kexts/$t" && find NVAccel.kext -type f -exec shasum -a 256 '{}' \;) > "$NM/kexts/$t/SHA256SUMS"; done
+echo 26 > "$NM/os-major"
+for b in NVMTLDriver.bundle NVIDIAShared.bundle nvmtl; do rm -rf "$GB/$b" && ditto "$P/Library/GPUBundles/$b" "$GB/$b" || die "copy $b"; done
+cp "$P/Library/GPUBundles/nvmtl-allow.txt" "$GB/" || die "copy allow list"
+rm -rf "$FW" && mkdir -p "$FW" && ditto "$P/Users/Shared/nvfw" "$FW" || die "copy firmware"
+[ -d "$P/licenses" ] && { rm -rf "$NM/licenses"; ditto "$P/licenses" "$NM/licenses"; }
+tr -cd '0-9.\n' < "$P/VERSION" | head -n 1 > "$NM/driver-version"
+
+step "3. owners and permissions"
+# kmutil on macOS 26 skips kexts not owned by root; WindowServer (_windowserver, uid 88) must read the bundles
+chown -R 0:0 "$EXT"/NVRM.kext "$EXT"/NVRMFB.kext "$EXT"/NVRMAGDC.kext "$EXT"/NVAccel.kext "$NM" \
+    "$GB/NVMTLDriver.bundle" "$GB/NVIDIAShared.bundle" "$GB/nvmtl" "$GB/nvmtl-allow.txt" || die "owners"
+chmod -R 755 "$EXT"/NVRM.kext "$EXT"/NVRMFB.kext "$EXT"/NVRMAGDC.kext "$EXT"/NVAccel.kext || die "kext permissions"
+chmod -R go-w,a+rX "$NM" "$GB/NVMTLDriver.bundle" "$GB/NVIDIAShared.bundle" "$GB/nvmtl" && chmod 644 "$GB/nvmtl-allow.txt" || die "bundle permissions"
+mkdir -p "$GB/nvmtl/aircache" "$GB/nvmtl/spvcache" && chown -R 88:0 "$GB/nvmtl/aircache" "$GB/nvmtl/spvcache" \
+    && chmod 0755 "$GB/nvmtl/aircache" "$GB/nvmtl/spvcache" || die "shader caches"
+ls -ln "$EXT" | grep -i nv
+
+step "4. auxiliary kernel collection"
+KC="$L/KernelCollections/AuxiliaryKernelExtensions.kc"; NEW="$KC.new"; rm -f "$NEW"
+KARG=(--allow-missing-kdk); [ -f "$SYS/System/Library/Kernels/kernel" ] && KARG+=(--kernel "$SYS/System/Library/Kernels/kernel")
+kmutil create -n aux --volume-root "$SYS" "${KARG[@]}" \
+    -B "$SYS/System/Library/KernelCollections/BootKernelExtensions.kc" \
+    -S "$SYS/System/Library/KernelCollections/SystemKernelExtensions.kc" \
+    --repository "$EXT" -A "$NEW" -z || die "kmutil create failed (output above)"
+[ -s "$NEW" ] || die "kmutil produced no collection"
+INS=$(kmutil inspect -a x86_64 -A "$NEW" 2>&1)
+for k in NVRM NVRMFB NVRMAGDC NVAccel; do printf '%s\n' "$INS" | grep -q "com.nullmoth.$k" || { printf '%s\n' "$INS" | tail -30; die "com.nullmoth.$k is not in the collection"; }; done
+mv -f "$NEW" "$KC" || die "publish the collection"
+ls -l "$KC"
+rm -rf "$W"
+
+echo; echo "== DONE. Restart (Apple menu > Restart), then F11 > USB stick > macOS."
