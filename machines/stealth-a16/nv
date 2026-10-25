@@ -56,11 +56,15 @@ ls -ln "$EXT" | grep -i nv
 
 step "4. auxiliary kernel collection"
 KC="$L/KernelCollections/AuxiliaryKernelExtensions.kc"; NEW="$KC.new"; rm -f "$NEW"
-KARG=(--allow-missing-kdk); [ -f "$SYS/System/Library/Kernels/kernel" ] && KARG+=(--kernel "$SYS/System/Library/Kernels/kernel")
-kmutil create -n aux --volume-root "$SYS" "${KARG[@]}" \
-    -B "$SYS/System/Library/KernelCollections/BootKernelExtensions.kc" \
-    -S "$SYS/System/Library/KernelCollections/SystemKernelExtensions.kc" \
-    --repository "$EXT" -A "$NEW" -z || die "kmutil create failed (output above)"
+S=/System/Library/KernelCollections
+# Attempt 1: no --volume-root, every path absolute. Attempt 2: --volume-root, which prefixes the volume to -B/-S/--kernel
+# (the first run read /Volumes/macOS/Volumes/macOS/System/...), so those go relative and the Data paths stay absolute.
+echo "-- attempt 1"
+kmutil create -n aux --allow-missing-kdk --kernel "$SYS/System/Library/Kernels/kernel"     -B "$SYS$S/BootKernelExtensions.kc" -S "$SYS$S/SystemKernelExtensions.kc"     --repository "$EXT" -A "$NEW" -z
+if [ ! -s "$NEW" ]; then
+    echo "-- attempt 2"; rm -f "$NEW"
+    kmutil create -n aux --volume-root "$SYS" --allow-missing-kdk --kernel /System/Library/Kernels/kernel         -B "$S/BootKernelExtensions.kc" -S "$S/SystemKernelExtensions.kc"         --repository "$EXT" -A "$NEW" -z
+fi
 [ -s "$NEW" ] || die "kmutil produced no collection"
 INS=$(kmutil inspect -a x86_64 -A "$NEW" 2>&1)
 for k in NVRM NVRMFB NVRMAGDC NVAccel; do printf '%s\n' "$INS" | grep -q "com.nullmoth.$k" || { printf '%s\n' "$INS" | tail -30; die "com.nullmoth.$k is not in the collection"; }; done
