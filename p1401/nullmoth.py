@@ -150,7 +150,8 @@ def apply(cfg, result, change):
                "the SIP value the NullMoth driver was tested with (its kexts are not Apple-signed)")
         nv["csr-active-config"] = SIP_DRIVER
     laptop_gpu_awake(cfg, result, live, change)
-    delete = cfg["NVRAM"].setdefault("Delete", {}).setdefault("7C436110-AB2A-4BBB-A880-FE41995C9F82", [])
+    laptop_panel_hidpi(nv, result, change)
+    delete =cfg["NVRAM"].setdefault("Delete", {}).setdefault("7C436110-AB2A-4BBB-A880-FE41995C9F82", [])
     # not boot-args (): deleting it replaced the flags of a machine already running macOS. SIP is safe to reassert.
     for k in ("csr-active-config",):
         if k not in delete:
@@ -173,6 +174,21 @@ def weg_boot_screen(cfg, nv, change):
     nv["boot-args"] = " ".join(args + ["gfxrst=4"])
     change("nullmoth-weg-gfxrst", "", "gfxrst=4",
            "WhateverGreen's boot screen copy can panic the Mac when the NVIDIA display opens; gfxrst=4 turns it off")
+
+
+def laptop_panel_hidpi(nv, result, change):
+    """Laptops: nvfbhidpi=1, so the built-in panel offers macOS's scaled HiDPI sizes ("looks like 1440 x 900" on a
+    2560 x 1600 panel). Without it NVRMFB caps the desktop at the panel raster and only the 1:1 size is sharp; with it
+    the head's scaler fits a desktop up to twice the raster to the panel's native timings at full refresh rate. A
+    nvfbhidpi already in the config is left as it is."""
+    if ((result.hardware or {}).get("Motherboard") or {}).get("Platform") != "Laptop":
+        return
+    args = (nv.get("boot-args") or "").split()
+    if any(a.startswith("nvfbhidpi=") for a in args):
+        return
+    nv["boot-args"] = " ".join(args + ["nvfbhidpi=1"])
+    change("nullmoth-laptop-hidpi", "", "nvfbhidpi=1",
+           "the built-in panel gets macOS's scaled HiDPI sizes at its native refresh rate")
 
 
 def laptop_gpu_awake(cfg, result, live, change):
