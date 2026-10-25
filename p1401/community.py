@@ -76,6 +76,25 @@ DRIVERS = [
         },
         "what": "AMD USB input lag fix (XhciNudge 1.0.0)",
     },
+    {   # Strix Point (Ryzen AI 300) xHCI: the same single-vector lag, on controllers XhciNudge does not match.
+        # Kicks the second event ring of every AMD xHCI on a timer; boot-arg itlkick=0 turns it off
+        "name": "ItlXhciKick", "repo": "thanhnndev/ga403wm-hackintosh", "section": "USB Controllers",
+        "experimental": True, "ids": ["1022-151E", "1022-151F", "1022-151A", "1022-151B"],
+        "builds": {
+            v: ("https://github.com/thanhnndev/ga403wm-hackintosh/releases/download/kext-v1.1/ItlXhciKick.kext.zip",
+                9268, "5bc902d2f66ed3dd0860bc9032ecdc8b58eafa69f6822daf7397c839da94d147") for v in (SEQUOIA, TAHOE)
+        },
+        "what": "AMD Strix Point USB input lag fix (ItlXhciKick, kext-v1.1)",
+    },
+    {   # Strix Point CPPC: without it the cores sit near their 2 GHz P0 (the kext refuses any other CPU model)
+        "name": "AmdCppc", "repo": "thanhnndev/ga403wm-hackintosh", "section": None, "codename": "Strix Point",
+        "experimental": True,
+        "builds": {
+            v: ("https://github.com/thanhnndev/ga403wm-hackintosh/releases/download/kext-v1.1/AmdCppc.kext.zip",
+                13423, "d53ab645883a04f3387ddae9c3636b4d1056a1546c1c4a0a5156277b40be5d95") for v in (SEQUOIA, TAHOE)
+        },
+        "what": "AMD Strix Point CPU boost and CPPC (AmdCppc, kext-v1.1)",
+    },
     {   # same controllers: USB storage drops once macOS hands out RAM below ~159 MB; costs ~155 MB of RAM
         "name": "KernReserveLow.efi", "repo": "MonkaKokosowa/KernReserveLow", "section": "USB Controllers",
         "experimental": True, "efi": True,

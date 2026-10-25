@@ -300,6 +300,10 @@
    "license": "GPL-2.0",
    "class": "copyleft"
   },
+  "thanhnndev/ga403wm-hackintosh": {
+   "license": "BSD-3-Clause-Clear",
+   "class": "permissive"
+  },
   "thegwchr/Feixiao": {
    "license": "GPL-2.0 OR BSD-3-Clause",
    "class": "copyleft",
