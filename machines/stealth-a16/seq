@@ -1,8 +1,9 @@
 #!/bin/bash
 # Erases the macOS APFS partition and installs macOS 15 Sequoia on it from MACINSTALL, with no network.
 # In macOS Recovery (the stick's "1401" entry), Utilities > Terminal:
-#     bash /V*/14*/seq
-LOG=/Volumes/1401/seq-install.log
+#     bash /V*/MAC*/seq      (the copy on the MACINSTALL partition; the stick copy is /V*/14*/seq)
+HERE=$(cd "$(dirname "$0")" && pwd)
+LOG="$HERE/seq-install.log"; touch "$LOG" 2>/dev/null || LOG=/tmp/seq-install.log
 exec > >(tee "$LOG") 2>&1
 die() { echo "STOP: $*"; exit 1; }
 pmset -a sleep 0 displaysleep 0 disksleep 0 >/dev/null 2>&1
@@ -19,4 +20,6 @@ else
     echo "== no /Volumes/macOS: using it as it is"; diskutil list internal
 fi
 [ -d /Volumes/macOS ] || die "no /Volumes/macOS after erase"
-exec bash /Volumes/1401/StealthA16/offline-install.sh macOS
+OI="$HERE/offline-install.sh"; [ -f "$OI" ] || OI="$HERE/StealthA16/offline-install.sh"
+[ -f "$OI" ] || die "offline-install.sh is not next to this script"
+exec bash "$OI" macOS
